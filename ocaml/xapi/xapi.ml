@@ -921,6 +921,7 @@ let server_init() =
 
     Server_helpers.exec_with_new_task "server_init" ~task_in_database:true (fun __context -> 
     Startup.run ~__context [
+      "Starting cluster stack", [], (fun () -> Cluster_stack.on_xapi_start ~__context);
       "Checking emergency network reset", [], check_network_reset;
       "Upgrade bonds to Boston", [Startup.NoExnRaising], Sync_networking.fix_bonds ~__context;
       "Reconfig (from DB) for incoming/outgoing stunnel instances", [], set_stunnel_legacy_db ~__context;
@@ -993,6 +994,7 @@ let server_init() =
           (fun () -> call_extauth_hook_script_before_xapi_initialize ~__context);
       "Calling on_xapi_initialize event hook in the external authentication plugin", [ Startup.NoExnRaising; Startup.OnThread ],
           (fun () -> event_hook_auth_on_xapi_initialize_async ~__context);
+      "Starting cluster stack manager", [Startup.OnlyMaster; Startup.OnThread], (fun () -> Cluster_stack.manage ~__context)
     ];
 
     debug "startup: startup sequence finished");
