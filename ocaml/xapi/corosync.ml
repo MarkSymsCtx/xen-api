@@ -80,5 +80,5 @@ let enable () =
 let ensure_started ~__context =
 	write_config ~__context;
 	if (Systemctl.is_active corosync)
-	then reload_corosync ()
+	then Systemctl.restart corosync
 	else Systemctl.start corosync

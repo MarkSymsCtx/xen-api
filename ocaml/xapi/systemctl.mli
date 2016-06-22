@@ -21,3 +21,4 @@ val disable : service -> unit
 val is_active : service -> bool
 val start : service -> unit
 val stop : service -> unit
+val restart : service -> unit

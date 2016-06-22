@@ -43,3 +43,6 @@ let start service =
 
 let stop service =
 	ignore (call_systemctl ["stop"; service])
+
+let restart service =
+	ignore (call_systemctl ["restart"; service])
