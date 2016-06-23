@@ -12,6 +12,8 @@
  * GNU Lesser General Public License for more details.
  *)
 
+module D = Debug.Make(struct let name="corosync" end)
+
 let modprobe = "/usr/sbin/modprobe"
 
 let call_modprobe driver =
@@ -63,6 +65,7 @@ nodelist {
 			addresses
 		|> String.concat "\n")
 	in
+        D.debug "Writing config '%s' to /etc/corosync/corosync.conf" config;
 	Unixext.write_string_to_file "/etc/corosync/corosync.conf" config
 
 let reload_corosync () =
@@ -80,5 +83,11 @@ let enable () =
 let ensure_started ~__context =
 	write_config ~__context;
 	if (Systemctl.is_active corosync)
-	then Systemctl.restart corosync
-	else Systemctl.start corosync
+	then begin
+		D.info "restarting corosync because it's already active";
+		Systemctl.restart corosync
+	end
+	else begin
+		D.info "starting corosync";
+		Systemctl.start corosync
+	end
