@@ -33,7 +33,7 @@ let make_vdi_info ~location ?uuid () =
 (** Very primitive first attempt at a set of backend features *)
 type capability =
     | Sr_create | Sr_delete | Sr_attach | Sr_detach | Sr_scan | Sr_probe | Sr_update 
-	| Sr_supports_local_caching
+	| Sr_caching | Sr_supports_local_caching
 	| Sr_stats
     | Sr_metadata
     | Sr_trim
@@ -49,7 +49,7 @@ type feature = capability * int64
 
 let all_capabilites =
   [ Sr_create; Sr_delete; Sr_attach; Sr_detach; Sr_scan; Sr_probe; Sr_update;
-    Sr_supports_local_caching;
+    Sr_caching; Sr_supports_local_caching;
     Sr_metadata;
     Sr_trim;
     Sr_stats;
@@ -62,6 +62,7 @@ let all_capabilites =
 let string_to_capability_table = [
 	"SR_PROBE",       Sr_probe;
 	"SR_UPDATE",      Sr_update;
+    "SR_CACHING",     Sr_caching;
 	"SR_SUPPORTS_LOCAL_CACHING", Sr_supports_local_caching;
 	"SR_METADATA",    Sr_metadata;
 	"SR_TRIM",        Sr_trim;
