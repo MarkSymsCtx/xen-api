@@ -40,7 +40,7 @@ let write_config ~__context =
   cluster_name: %s
   transport: udpu
   token_retransmits_before_loss_const: 10
-  token: 10000
+  token: 5000
 }
 
 logging {
@@ -52,6 +52,7 @@ logging {
 
 quorum {
   provider: corosync_votequorum
+  auto_tie_breaker: 1
 }
 
 nodelist {
