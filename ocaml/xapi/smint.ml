@@ -15,8 +15,6 @@
  * @group Storage
  *)
  
-open Pervasiveext
-
 module D=Debug.Make(struct let name="smint" end)
 open D
 
@@ -37,7 +35,7 @@ type capability =
 	| Sr_stats
     | Sr_metadata
     | Sr_trim
-    | Vdi_create | Vdi_delete | Vdi_attach | Vdi_detach
+  | Vdi_create | Vdi_delete | Vdi_attach | Vdi_detach | Vdi_mirror
     | Vdi_clone | Vdi_snapshot | Vdi_resize | Vdi_activate | Vdi_deactivate
     | Vdi_update | Vdi_introduce 
     | Vdi_resize_online
@@ -70,6 +68,7 @@ let string_to_capability_table = [
 	"VDI_DELETE",     Vdi_delete;
 	"VDI_ATTACH",     Vdi_attach;
 	"VDI_DETACH",     Vdi_detach; 
+  "VDI_MIRROR",     Vdi_mirror;
 	"VDI_RESIZE",     Vdi_resize;
 	"VDI_RESIZE_ONLINE",Vdi_resize_online;
 	"VDI_CLONE",      Vdi_clone;
@@ -100,14 +99,14 @@ let parse_string_int64_features strings =
 	let text_features =
 		List.filter
 			(fun s ->
-				let s = List.hd (Xstringext.String.split '/' s) in
+         let s = List.hd (Stdext.Xstringext.String.split '/' s) in
 				let p = List.mem s (List.map fst string_to_capability_table) in
 				if not p then debug "SM.feature: unknown feature %s" s;
 				p)
 			strings in
 	List.map
 		(fun c ->
-			match Xstringext.String.split '/' c with
+       match Stdext.Xstringext.String.split '/' c with
 				| [] -> failwith "parse_feature" (* not possible *)
 				| [cs] -> (cs, 1L) (* default version *)
 				| [cs; vs]

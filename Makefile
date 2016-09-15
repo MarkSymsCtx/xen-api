@@ -123,8 +123,8 @@ version:
 	let product_version () = Inventory.lookup ~default:\"\" \"PRODUCT_VERSION\" \n \
 	let product_version_text () = Inventory.lookup ~default:\"\" \"PRODUCT_VERSION_TEXT\" \n \
 	let product_version_text_short () = Inventory.lookup ~default:\"\" \"PRODUCT_VERSION_TEXT_SHORT\" \n \
-	let platform_name = \"$(PLATFORM_NAME)\" \n \
-	let platform_version = \"$(PLATFORM_VERSION)\" \n \
+	let platform_name () = Inventory.lookup ~default:\"$(PLATFORM_NAME)\" \"PLATFORM_NAME\" \n \
+	let platform_version () = Inventory.lookup ~default:\"$(PLATFORM_VERSION)\" \"PLATFORM_VERSION\" \n \
 	let product_brand () = Inventory.lookup ~default:\"\" \"PRODUCT_BRAND\" \n \
 	let build_number () = Inventory.lookup ~default:\"$(BUILD_NUMBER)\" \"BUILD_NUMBER\" \n \
 	let xapi_version_major = $(shell cut -d. -f1 VERSION) \n \
@@ -142,7 +142,7 @@ xapi.spec: xapi.spec.in
 srpm: xapi.spec
 	mkdir -p $(RPM_SOURCESDIR) $(RPM_SPECSDIR) $(RPM_SRPMSDIR)
 	while ! [ -d .git ]; do cd ..; done; \
-	git archive --prefix=xapi-1.9.57/ --format=tar HEAD | bzip2 -z > $(RPM_SOURCESDIR)/xapi-1.9.57.tar.bz2 # xen-api/Makefile
+	git archive --prefix=xapi-1.10.0/ --format=tar HEAD | bzip2 -z > $(RPM_SOURCESDIR)/xapi-1.10.0.tar.bz2 # xen-api/Makefile
 	cp $(JQUERY) $(JQUERY_TREEVIEW) $(RPM_SOURCESDIR)
 	make -C $(REPO) version
 	rm -f $(RPM_SOURCESDIR)/xapi-version.patch

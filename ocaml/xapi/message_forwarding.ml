@@ -15,6 +15,7 @@
  * @group API Messaging
  *)
 
+open Stdext
 open Threadext
 open Pervasiveext
 open Listext
@@ -792,9 +793,21 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 
 		(* Read resisdent-on field from vm to determine who to forward to  *)
 		let forward_vm_op ~local_fn ~__context ~vm op =
-			Xapi_vm_lifecycle.assert_power_state_in ~__context ~self:vm
-				~allowed:[`Running; `Paused];
+      let power_state = Db.VM.get_power_state ~__context ~self:vm in
+      if List.mem power_state [`Running; `Paused] then
 			do_op_on ~local_fn ~__context ~host:(Db.VM.get_resident_on ~__context ~self:vm) op
+      else
+        local_fn ~__context
+
+    (* Clear scheduled_to_be_resident_on for a VM and all its vGPUs. *)
+    let clear_scheduled_to_be_resident_on ~__context ~vm =
+      Db.VM.set_scheduled_to_be_resident_on ~__context ~self:vm ~value:Ref.null;
+      List.iter
+        (fun vgpu ->
+           Db.VGPU.set_scheduled_to_be_resident_on ~__context
+             ~self:vgpu
+             ~value:Ref.null)
+        (Db.VM.get_VGPUs ~__context ~self:vm)
 
 		(* Notes on memory checking/reservation logic:
 		   When computing the hosts free memory we consider all VMs resident_on (ie running
@@ -823,8 +836,12 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			end;
 			(* Once this is set concurrent VM.start calls will start checking the memory used by this VM *)
 			Db.VM.set_scheduled_to_be_resident_on ~__context ~self:vm ~value:host;
+      try
 			Vgpuops.create_vgpus ~__context host (vm, snapshot)
 				(Helpers.will_boot_hvm ~__context ~self:vm)
+      with e ->
+        clear_scheduled_to_be_resident_on ~__context ~vm;
+        raise e
 
 		(* For start/start_on/resume/resume_on/migrate *)
 		let finally_clear_host_operation ~__context ~host ?host_op () = match host_op with
@@ -852,16 +869,6 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 		   (which must not change whilst someone is calling choose_host_for_vm) only executes in exclusion with
 		   choose_host_for_vm.
 		*)
-
-		(* Clear scheduled_to_be_resident_on for a VM and all its vGPUs. *)
-		let clear_scheduled_to_be_resident_on ~__context ~vm =
-			Db.VM.set_scheduled_to_be_resident_on ~__context ~self:vm ~value:Ref.null;
-			List.iter
-				(fun vgpu ->
-					Db.VGPU.set_scheduled_to_be_resident_on ~__context
-						~self:vgpu
-						~value:Ref.null)
-				(Db.VM.get_VGPUs ~__context ~self:vm)
 
 		(* Used by VM.start and VM.resume to choose a host with enough resource and to
 		   'allocate_vm_to_host' (ie set the 'scheduled_to_be_resident_on' field) *)
@@ -1777,11 +1784,21 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			dynamic_min = %Ld; dynamic_max = %Ld"
 				(vm_uuid ~__context self)
 				static_min static_max dynamic_min dynamic_max;
-			with_vm_operation ~__context ~self ~doc:"VM.set_memory_limits"
-				~op:`changing_memory_limits
+      let local_fn = Local.VM.set_memory_limits ~self
+          ~static_min ~static_max ~dynamic_min ~dynamic_max in
+      with_vm_operation ~__context ~self ~doc:"VM.set_memory_limits" ~op:`changing_memory_limits
 				(fun () ->
-					Local.VM.set_memory_limits ~__context ~self
-						~static_min ~static_max ~dynamic_min ~dynamic_max)
+           forward_vm_op ~local_fn ~__context ~vm:self
+             (fun session_id rpc -> Client.VM.set_memory_limits rpc session_id self
+                 static_min static_max dynamic_min dynamic_max))
+
+    let set_memory ~__context ~self ~value =
+      info "VM.set_memory: self = %s; value = %Ld" (vm_uuid ~__context self) value;
+      let local_fn = Local.VM.set_memory ~self ~value in
+      with_vm_operation ~__context ~self ~doc:"VM.set_memory" ~op:`changing_memory_limits
+        (fun () ->
+           forward_vm_op ~local_fn ~__context ~vm:self
+             (fun session_id rpc -> Client.VM.set_memory rpc session_id self value))
 
 		let set_memory_target_live ~__context ~self ~target =
 			info "VM.set_memory_target_live: VM = '%s'; min = %Ld" (vm_uuid ~__context self) target;
@@ -1850,6 +1867,7 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 
 		let query_data_source ~__context ~self ~data_source =
 			info "VM.query_data_source: VM = '%s'; data source = '%s'" (vm_uuid ~__context self) data_source;
+      Xapi_vm_lifecycle.assert_power_state_in ~__context ~self ~allowed:[`Running; `Paused];
 			let local_fn = Local.VM.query_data_source ~self ~data_source in
 			forward_vm_op ~local_fn ~__context ~vm:self
 				(fun session_id rpc -> Client.VM.query_data_source rpc session_id self data_source)
@@ -2364,6 +2382,18 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 			do_op_on ~local_fn ~__context ~host
 				(fun session_id rpc -> Client.Host.call_plugin rpc session_id host plugin fn args)
 
+    let call_extension ~__context ~host ~call =
+      info "Host.call_extension host = '%s'; call = '%s'" (host_uuid ~__context host) call;
+      let local_fn = Local.Host.call_extension ~host ~call in
+      do_op_on ~local_fn ~__context ~host
+        (fun session_id rpc -> Client.Host.call_extension rpc session_id host call)
+
+    let has_extension ~__context ~host ~name =
+      info "Host.has_extension: host = '%s'; name = '%s'" (host_uuid ~__context host) name;
+      let local_fn = Local.Host.has_extension ~host ~name in
+      do_op_on ~local_fn ~__context ~host
+        (fun session_id rpc -> Client.Host.has_extension rpc session_id host name)
+
 		let sync_data ~__context ~host =
 			info "Host.sync_data: host = '%s'" (host_uuid ~__context host);
 			Local.Host.sync_data ~__context ~host
@@ -2737,6 +2767,12 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 
 		let unplug ~__context ~self = unplug_common ~__context ~self ~force:false
 		let unplug_force ~__context ~self = unplug_common ~__context ~self ~force:true
+
+    let move ~__context ~self ~network =
+      info "VIF.move: VIF = '%s' network = '%s'" (vif_uuid ~__context self) (network_uuid ~__context network);
+      let local_fn = Local.VIF.move ~self ~network in
+      let remote_fn = (fun session_id rpc -> Client.VIF.move rpc session_id self network) in
+      forward_vif_op ~local_fn ~__context ~self remote_fn
 
 		let set_locking_mode ~__context ~self ~value =
 			info "VIF.set_locking_mode: VIF = '%s'; value = '%s'" (vif_uuid ~__context self) (Record_util.vif_locking_mode_to_string value);
@@ -3117,12 +3153,16 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 		let set_name_label ~__context ~sr ~value =
 			info "SR.set_name_label: SR = '%s' name-label = '%s'"
 				(sr_uuid ~__context sr) value;
-			Local.SR.set_name_label ~__context ~sr ~value
+      let local_fn = Local.SR.set_name_label ~sr ~value in
+      forward_sr_op ~local_fn ~__context ~self:sr
+        (fun session_id rpc -> Client.SR.set_name_label rpc session_id sr value)
 
 		let set_name_description ~__context ~sr ~value =
 			info "SR.set_name_description: SR = '%s' name-description = '%s'"
 				(sr_uuid ~__context sr) value;
-			Local.SR.set_name_description ~__context ~sr ~value
+      let local_fn = Local.SR.set_name_description ~sr ~value in
+      forward_sr_op ~local_fn ~__context ~self:sr
+        (fun session_id rpc -> Client.SR.set_name_description rpc session_id sr value)
 
 		let assert_can_host_ha_statefile ~__context ~sr =
 			info "SR.assert_can_host_ha_statefile: SR = '%s'" (sr_uuid ~__context sr);
@@ -3441,8 +3481,10 @@ module Forward = functor(Local: Custom_actions.CUSTOM_ACTIONS) -> struct
 							(snapshot, host) in
 					VM.reserve_memory_for_vm ~__context ~vm:vm ~host ~snapshot ~host_op:`vm_migrate
 						(fun () ->
+                with_sr_andor_vdi ~__context ~vdi:(vdi, `mirror) ~doc:"VDI.mirror"
+                  (fun () ->
 							do_op_on ~local_fn ~__context ~host
-								(fun session_id rpc -> Client.VDI.pool_migrate ~rpc ~session_id ~vdi ~sr ~options)))
+                       (fun session_id rpc -> Client.VDI.pool_migrate ~rpc ~session_id ~vdi ~sr ~options))))
 
 		let resize ~__context ~vdi ~size =
 			info "VDI.resize: VDI = '%s'; size = %Ld" (vdi_uuid ~__context vdi) size;

@@ -15,13 +15,13 @@ exception Server_error of string * string list
 
 let to_string = function
   | Server_error (name, args) ->
-      Printf.sprintf "Server_error(%s, [ %a ])" name (fun () -> String.concat "; ") args
+    Printf.sprintf "Server_error(%s, [ %a ])" name (fun () -> String.concat "; ") args
   | e -> Printexc.to_string e
 
 let _ =
   Printexc.register_printer (function
-  | Server_error(code, params) as e -> Some (to_string e)
-  | _ -> None)
+      | Server_error(code, params) as e -> Some (to_string e)
+      | _ -> None)
 
 let message_deprecated = "MESSAGE_DEPRECATED"
 let message_removed = "MESSAGE_REMOVED"
@@ -51,6 +51,7 @@ let vm_hvm_required = "VM_HVM_REQUIRED"
 let vm_no_vcpus = "VM_NO_VCPUS"
 let vm_toomany_vcpus = "VM_TOO_MANY_VCPUS"
 let vm_is_protected = "VM_IS_PROTECTED"
+let vm_is_immobile= "VM_IS_IMMOBILE"
 
 let host_in_use = "HOST_IN_USE"
 let host_in_emergency_mode = "HOST_IN_EMERGENCY_MODE"
@@ -100,6 +101,7 @@ let pif_is_physical = "PIF_IS_PHYSICAL"
 let pif_is_vlan = "PIF_IS_VLAN"
 let pif_vlan_exists = "PIF_VLAN_EXISTS"
 let pif_vlan_still_exists = "PIF_VLAN_STILL_EXISTS"
+let vlan_in_use = "VLAN_IN_USE"
 let pif_device_not_found = "PIF_DEVICE_NOT_FOUND"
 let pif_already_bonded = "PIF_ALREADY_BONDED"
 let pif_cannot_bond_cross_host = "PIF_CANNOT_BOND_CROSS_HOST"
@@ -176,6 +178,7 @@ let vm_migrate_failed = "VM_MIGRATE_FAILED"
 let vm_missing_pv_drivers = "VM_MISSING_PV_DRIVERS"
 let vm_failed_shutdown_ack = "VM_FAILED_SHUTDOWN_ACKNOWLEDGMENT"
 let vm_old_pv_drivers = "VM_OLD_PV_DRIVERS"
+let vm_lacks_feature = "VM_LACKS_FEATURE"
 let vm_lacks_feature_shutdown = "VM_LACKS_FEATURE_SHUTDOWN"
 let vm_lacks_feature_suspend = "VM_LACKS_FEATURE_SUSPEND"
 let vm_lacks_feature_vcpu_hotplug = "VM_LACKS_FEATURE_VCPU_HOTPLUG"
@@ -246,7 +249,7 @@ let sr_operation_not_supported = "SR_OPERATION_NOT_SUPPORTED"
 let sr_not_sharable = "SR_NOT_SHARABLE"
 let sr_indestructible = "SR_INDESTRUCTIBLE"
 let clustered_sr_degraded = "CLUSTERED_SR_DEGRADED"
-  
+
 let sm_plugin_communication_failure = "SM_PLUGIN_COMMUNICATION_FAILURE"
 
 let pbd_exists = "PBD_EXISTS"
@@ -513,3 +516,5 @@ let sr_does_not_support_migration = "SR_DOES_NOT_SUPPORT_MIGRATION"
 let unimplemented_in_sm_backend = "UNIMPLEMENTED_IN_SM_BACKEND"
 
 let vm_call_plugin_rate_limit = "VM_CALL_PLUGIN_RATE_LIMIT"
+
+let suspend_image_not_accessible = "SUSPEND_IMAGE_NOT_ACCESSIBLE"

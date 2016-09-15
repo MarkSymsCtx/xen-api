@@ -1,6 +1,6 @@
 OCAMLPACKS = oUnit sexpr xcp xmlm stunnel xml-light2 http-svr uuid	\
              netdev tapctl xenctrl xenctrlext xenstore-compat	\
-             pciutil oclock gzip sha1 xcp.network xcp.rrd xcp.storage	\
+             pciutil oclock gzip sha1 sha.sha1 xcp.network xcp.rrd xcp.storage	\
              xcp.xen xcp.memory tar tar.unix oPasswd xcp-inventory \
              rrdd-plugin pci xapi-test-utils
 
@@ -42,6 +42,7 @@ OCAML_OBJS = \
 	test_map_check \
 	test_pool_apply_edition \
 	test_pool_license \
+	test_pool_restore_database \
 	test_platformdata \
 	test_sm_features \
 	test_gpu_group \
@@ -61,6 +62,9 @@ OCAML_OBJS = \
 	../license/daily_license_check \
 	test_daily_license_check \
 	test_dbsync_master \
+	test_xapi_xenops \
+	test_no_migrate \
+	test_features \
 
 OCamlProgram(suite, suite $(OCAML_OBJS) )
 

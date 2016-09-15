@@ -154,7 +154,7 @@ val tickle_heartbeat :
 val create_new_blob :
   __context:Context.t ->
   host:[ `host ] Ref.t -> name:string -> mime_type:string -> public:bool -> [ `blob ] Ref.t
-val serialize_host_enable_disable_extauth : Threadext.Mutex.t
+val serialize_host_enable_disable_extauth : Mutex.t
 val extauth_hook_script_name : string
 val call_extauth_plugin_nomutex :
   __context:Context.t ->
@@ -166,10 +166,16 @@ val call_plugin :
   __context:Context.t ->
   host:[ `host ] Ref.t ->
   plugin:string -> fn:string -> args:(string * string) list -> string
+val call_extension :
+  __context:Context.t ->
+  host:[ `host ] Ref.t -> call:string -> string
+val has_extension :
+  __context:Context.t ->
+  host:[ `host ] Ref.t -> name:string -> bool
 val sync_data : __context:Context.t -> host:API.ref_host -> unit
 val backup_rrds : __context:Context.t -> host:'b -> delay:float -> unit
-val get_servertime : __context:'a -> host:'b -> Date.iso8601
-val get_server_localtime : __context:'a -> host:'b -> Date.iso8601
+val get_servertime : __context:'a -> host:'b -> Stdext.Date.iso8601
+val get_server_localtime : __context:'a -> host:'b -> Stdext.Date.iso8601
 val enable_binary_storage :
   __context:Context.t -> host:[ `host ] Ref.t -> unit
 val disable_binary_storage :

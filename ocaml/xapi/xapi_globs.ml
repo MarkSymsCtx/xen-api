@@ -15,7 +15,7 @@
 (** A central location for settings related to xapi *)
 
 module String_plain = String (* For when we don't want the Xstringext version *)
-open Xstringext
+open Stdext.Xstringext
 open Printf
 
 module D = Debug.Make(struct let name="xapi_globs" end)
@@ -39,7 +39,7 @@ let xapi_user_agent = "xapi/"^(string_of_int version_major)^"."^(string_of_int v
 (* Normally xencenter_min_verstring and xencenter_max_verstring below should be set to the same value,
  * but there are exceptions: please consult the XenCenter maintainers if in doubt. *)
 let api_version_major = 2L
-let api_version_minor = 5L
+let api_version_minor = 6L
 let api_version_string =
   Printf.sprintf "%Ld.%Ld" api_version_major api_version_minor
 let api_version_vendor = "XenSource"
@@ -57,8 +57,8 @@ let api_version_vendor_implementation = []
  *
  * Please consult the XenCenter maintainers before changing these numbers, because a corresponding change
  * will need to be made in XenCenter *)
-let xencenter_min_verstring = "2.5"
-let xencenter_max_verstring = "2.5"
+let xencenter_min_verstring = "2.6"
+let xencenter_max_verstring = "2.6"
 
 (* linux pack vsn key in host.software_version (used for a pool join restriction *)
 let linux_pack_vsn_key = "xs:linux"
@@ -96,6 +96,7 @@ let db_conf_path = ref (Filename.concat "/etc/xensource" "db.conf")
 let remote_db_conf_fragment_path = ref (Filename.concat "/etc/xensource" "remote.db.conf")
 let cpu_info_file = ref (Filename.concat "/etc/xensource" "boot_time_cpus")
 let initial_host_free_memory_file = "/var/run/nonpersistent/xapi/boot_time_memory"
+let requires_reboot_file = "/var/run/nonpersistent/xapi/host-requires-reboot"
 let using_rrds = ref false
 
 let ready_file = ref ""
@@ -142,8 +143,8 @@ let software_version () =
 		[_product_version, Version.product_version ();
 			_product_version_text,       Version.product_version_text ();
 			_product_version_text_short, Version.product_version_text_short ();
-			_platform_name, Version.platform_name;
-			_platform_version, Version.platform_version;
+     _platform_name, Version.platform_name ();
+     _platform_version, Version.platform_version ();
 			 _product_brand,   Version.product_brand ();
 			 _build_number,    Version.build_number ();
 			 _git_id,           Version.git_id;
@@ -184,6 +185,7 @@ let owner_key = "owner" (* set in VBD other-config to indicate that clients can 
 let vbd_backend_key = "backend-kind" (* set in VBD other-config *)
 let vbd_polling_duration_key = "polling-duration" (* set in VBD other-config *)
 let vbd_polling_idle_threshold_key = "polling-idle-threshold" (* set in VBD other-config *)
+let vbd_backend_local_key = "backend-local" (* set in VBD other-config *)
 
 let using_vdi_locking_key = "using-vdi-locking" (* set in Pool other-config to indicate that we should use storage-level (eg VHD) locking *)
 
@@ -632,6 +634,10 @@ let network_reset_trigger = "/tmp/network-reset"
 
 let first_boot_dir = "/etc/firstboot.d/"
 
+(** {2 Xenopsd metadata persistence} *)
+
+let persist_xenopsd_md = "persist_xenopsd_md"
+let persist_xenopsd_md_root = Filename.concat "/var/lib/xcp" "xenopsd_md"
 
 (** Dynamic configurations to be read whenever xapi (re)start *)
 
@@ -832,11 +838,17 @@ let igd_passthru_vendor_whitelist = ref []
 
 let gvt_g_whitelist = ref "/etc/gvt-g-whitelist"
 
+let xen_livepatch_list = ref "/usr/sbin/xen-livepatch list"
+
+let kpatch_list = ref "/usr/sbin/kpatch list"
+
 (* The bfs-interfaces script returns boot from SAN NICs.
  * All ISCSI Boot Firmware Table (ibft) NICs should be marked
  * with PIF.managed = false and all FCoE boot from SAN * NICs
  * should be set with disallow-unplug=true, during a PIF.scan. *)
 let non_managed_pifs = ref "/opt/xensource/libexec/bfs-interfaces"
+
+let xen_cmdline_script = ref "/opt/xensource/libexec/xen-cmdline"
 
 let sr_health_check_task_label = "SR Recovering"
 
@@ -911,6 +923,8 @@ let ciphersuites_good_outbound = ref None
 let ciphersuites_legacy_outbound = ref ""
 
 let gpumon_stop_timeout = ref 10.0
+
+let reboot_required_hfxs = ref "/run/reboot-required.hfxs"
 
 (* Fingerprint of default patch key *)
 let citrix_patch_key = "NERDNTUzMDMwRUMwNDFFNDI4N0M4OEVCRUFEMzlGOTJEOEE5REUyNg=="
@@ -1006,6 +1020,15 @@ let other_options = [
 
   "gpumon_stop_timeout", Arg.Set_float gpumon_stop_timeout,
     (fun () -> string_of_float !gpumon_stop_timeout), "Time to wait after attempting to stop gpumon when launching a vGPU-enabled VM.";
+
+  "reboot_required_hfxs", Arg.Set_string reboot_required_hfxs,
+  (fun () -> !reboot_required_hfxs), "File to query hotfix uuids which require reboot";
+
+  "xen_livepatch_list", Arg.Set_string xen_livepatch_list,
+  (fun () -> !xen_livepatch_list), "Command to query current xen livepatch list";
+
+  "kpatch_list", Arg.Set_string kpatch_list,
+  (fun () -> !kpatch_list), "Command to query current kernel patch list";
 ] 
 
 let all_options = options_of_xapi_globs_spec @ other_options
@@ -1058,6 +1081,7 @@ module Resources = struct
 		"xe-toolstack-restart", xe_toolstack_restart, "Path to xe-toolstack-restart script";
 		"xsh", xsh, "Path to xsh binary";
 		"static-vdis", static_vdis, "Path to static-vdis script";
+    "xen-cmdline-script", xen_cmdline_script, "Path to xen-cmdline script";
 	]
 	let nonessential_executables = [
 		"startup-script-hook", startup_script_hook, "Executed during startup";

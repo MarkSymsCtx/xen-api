@@ -14,6 +14,7 @@
 
 module Rrdd = Rrd_client.Client
 
+open Stdext
 open Fun
 open Pervasiveext
 open Xstringext
@@ -619,6 +620,7 @@ let create ~__context ~uuid ~name_label ~name_description ~hostname ~address ~ex
 	~display:`enabled
 	~virtual_hardware_platform_versions:(if host_is_us then Xapi_globs.host_virtual_hardware_platform_versions else [0L])
 	~control_domain:Ref.null
+    ~patches_requiring_reboot:[]
   ;
   (* If the host we're creating is us, make sure its set to live *)
   Db.Host_metrics.set_last_updated ~__context ~self:metrics ~value:(Date.of_float (Unix.gettimeofday ()));
@@ -959,7 +961,13 @@ let call_plugin ~__context ~host ~plugin ~fn ~args =
 	then call_extauth_plugin ~__context ~host ~fn ~args
 	else Xapi_plugins.call_plugin (Context.get_session_id __context) plugin fn args
 
-let has_extension ~__context ~name =
+(* this is the generic extension call available to xapi users *)
+let call_extension ~__context ~host ~call =
+  let rpc = Jsonrpc.call_of_string call in
+  let response = Xapi_extensions.call_extension rpc in
+  Jsonrpc.string_of_response response
+
+let has_extension ~__context ~host ~name =
 	try
 		let (_: string) = Xapi_extensions.find_extension name in
 		true
@@ -1346,8 +1354,7 @@ let license_remove ~__context ~host =
 
 let refresh_pack_info ~__context ~host =
 	debug "Refreshing software_version";
-	let software_version = Create_misc.make_software_version ~__context in
-	Db.Host.set_software_version ~__context ~self:host ~value:software_version
+  Create_misc.create_software_version ~__context
 
 (* Network reset *)
 

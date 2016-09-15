@@ -18,7 +18,7 @@ open Datamodel_types
 (* IMPORTANT: Please bump schema vsn if you change/add/remove a _field_.
               You do not have to bump vsn if you change/add/remove a message *)
 let schema_major_vsn = 5
-let schema_minor_vsn = 100
+let schema_minor_vsn = 101
 
 (* Historical schema versions just in case this is useful later *)
 let rio_schema_major_vsn = 5
@@ -536,6 +536,8 @@ let _ =
     ~doc:"You tried to create a PIF, but it already exists." ();
   error Api_errors.pif_vlan_still_exists [ "PIF" ]
     ~doc:"Operation cannot proceed while a VLAN exists on this interface." ();
+  error Api_errors.vlan_in_use ["device"; "vlan"]
+    ~doc:"Operation cannot be performed because this VLAN is already in use. Please check your network configuration." ();
   error Api_errors.pif_already_bonded [ "PIF" ]
     ~doc:"This operation cannot be performed because the pif is bonded." ();
   error Api_errors.pif_cannot_bond_cross_host []
@@ -675,6 +677,8 @@ let _ =
 	  ~doc:"You attempted an operation which needs the VM cooperative suspend feature on a VM which lacks it." ();
   error Api_errors.vm_lacks_feature_static_ip_setting [ "vm" ]
 	  ~doc:"You attempted an operation which needs the VM static-ip-setting feature on a VM which lacks it." ();
+  error Api_errors.vm_lacks_feature [ "vm" ]
+    ~doc:"You attempted an operation on a VM which lacks the feature." ();
   error Api_errors.vm_is_template ["vm"]
     ~doc:"The operation attempted is not valid for a template VM" ();
   error Api_errors.other_operation_in_progress ["class"; "object"]
@@ -840,7 +844,7 @@ let _ =
   error Api_errors.pool_joining_host_must_have_same_product_version []
     ~doc:"The host joining the pool must have the same product version as the pool master." ();
   error Api_errors.pool_joining_host_must_only_have_physical_pifs []
-    ~doc:"The host joining the pool may not have any bonds, VLANs or tunnels." ();
+    ~doc:"The host joining the pool must not have any bonds, VLANs or tunnels." ();
   error Api_errors.pool_hosts_not_compatible []
     ~doc:"The hosts in this pool are not compatible." ();
   error Api_errors.pool_hosts_not_homogeneous [ "reason" ]
@@ -957,7 +961,7 @@ let _ =
   error Api_errors.too_many_storage_migrates [ "number" ]
     ~doc:"You reached the maximal number of concurrently migrating VMs." ();
   error Api_errors.sr_does_not_support_migration [ "sr" ]
-    ~doc:"You attempted to migrate a VDI on SR which doesn't have snapshot capability" ();
+    ~doc:"You attempted to migrate a VDI to or from an SR which doesn't support migration" ();
   error Api_errors.vm_failed_shutdown_ack []
     ~doc:"VM didn't acknowledge the need to shutdown." ();
   error Api_errors.vm_shutdown_timeout [ "vm"; "timeout" ]
@@ -1041,6 +1045,9 @@ let _ =
     ~doc:"An HA statefile could not be created, perhaps because no SR with the appropriate capability was found." ();
   error Api_errors.vif_not_in_map [ "vif" ]
     ~doc:"This VIF was not mapped to a destination Network in VM.migrate_send operation" () ;
+
+  error Api_errors.suspend_image_not_accessible [ "vdi" ]
+    ~doc:"The suspend image of a checkpoint is not accessible from the host on which the VM is running" ();
 
   error Api_errors.sr_operation_not_supported [ "sr" ]
     ~doc:"The SR backend does not support the operation (check the SR's allowed operations)" ();
@@ -1335,8 +1342,10 @@ let _ =
 		~doc:"The VM cannot be imported unforced because it is either the same version or an older version of an existing VM." ();
 
 	error Api_errors.vm_call_plugin_rate_limit ["VM"; "interval"; "wait"]
-		~doc:"There is a minimal interval required between consecutive plugin calls made on the same VM, please wait before retry." ()
+    ~doc:"There is a minimal interval required between consecutive plugin calls made on the same VM, please wait before retry." ();
 
+  error Api_errors.vm_is_immobile ["VM"]
+    ~doc:"The VM is configured in a way that prevents it from being mobile." ()
 
 let _ =
     message (fst Api_messages.ha_pool_overcommitted) ~doc:"Pool has become overcommitted: it can no longer guarantee to restart protected VMs if the configured number of hosts fail." ();
@@ -1960,6 +1969,18 @@ let vm_set_memory_limits = call
 	~doc_tags:[Memory]
 	()
 
+let vm_set_memory = call
+    ~name:"set_memory"
+    ~in_product_since:rel_ely
+    ~doc:"Set the memory allocation of this VM. Sets all of memory_static_max, memory_dynamic_min, and memory_dynamic_max to the given value, and leaves memory_static_min untouched."
+    ~allowed_roles:_R_VM_POWER_ADMIN
+    ~params:[
+      Ref _vm, "self", "The VM";
+      Int, "value", "The new memory allocation (bytes).";
+    ]
+    ~doc_tags:[Memory]
+    ()
+
 let vm_set_memory_target_live = call
 	~name:"set_memory_target_live"
 	~in_product_since:rel_rio
@@ -2575,7 +2596,7 @@ let host_ha_join_liveset = call
   ~in_product_since:rel_orlando
   ~name:"ha_join_liveset"
   ~doc:"Block until this host joins the liveset."
-  ~params:[Ref _host, "host", "The Host whose HA datmon to start"]
+    ~params:[Ref _host, "host", "The Host whose HA daemon to start"]
   ~pool_internal:true
   ~hide_from_docs:true
   ~allowed_roles:_R_LOCAL_ROOT_ONLY
@@ -3054,6 +3075,26 @@ let host_call_plugin = call
   ~result:(String, "Result from the plugin")
   ~allowed_roles:_R_POOL_ADMIN
   ()
+
+let host_has_extension = call
+    ~name:"has_extension"
+    ~in_product_since:rel_dundee_plus
+    ~doc:"Return true if the extension is available on the host"
+    ~params:[Ref _host, "host", "The host";
+             String, "name", "The name of the API call";]
+    ~result:(Bool, "True if the extension exists, false otherwise")
+    ~allowed_roles:_R_POOL_ADMIN
+    ()
+
+let host_call_extension = call
+    ~name:"call_extension"
+    ~in_product_since:rel_dundee_plus
+    ~doc:"Call a XenAPI extension on this host"
+    ~params:[Ref _host, "host", "The host";
+             String, "call", "Rpc call for the extension";]
+    ~result:(String, "Result from the extension")
+    ~allowed_roles:_R_POOL_ADMIN
+    ()
 
 let host_enable_binary_storage = call
   ~name:"enable_binary_storage"
@@ -4604,6 +4645,8 @@ let host =
 		 host_backup_rrds;
 		 host_create_new_blob;
 		 host_call_plugin;
+                host_has_extension;
+                host_call_extension;
 		 host_get_servertime;
 		 host_get_server_localtime;
 		 host_enable_binary_storage;
@@ -4696,6 +4739,7 @@ let host =
 	field ~qualifier:RW ~in_product_since:rel_cream ~default_value:(Some (VEnum "enabled")) ~ty:host_display "display" "indicates whether the host is configured to output its console to a physical display device";
 	field ~qualifier:DynamicRO ~in_product_since:rel_cream ~default_value:(Some (VSet [VInt 0L])) ~ty:(Set (Int)) "virtual_hardware_platform_versions" "The set of versions of the virtual hardware platform that the host can offer to its guests";
 	field ~qualifier:DynamicRO ~default_value:(Some (VRef (Ref.string_of Ref.null))) ~in_product_since:rel_dundee_plus ~ty:(Ref _vm) "control_domain" "The control domain (domain 0)";
+         field ~qualifier:DynamicRO ~lifecycle:[Published, rel_ely, ""] ~ty:(Set (Ref _pool_patch)) ~ignore_foreign_key:true "patches_requiring_reboot" "List of patches which require reboot";
  ])
 	()
 
@@ -4824,7 +4868,7 @@ let network_attach_for_vm = call
 	]
 	~in_product_since:rel_tampa
 	~hide_from_docs:true
-	~allowed_roles:_R_POOL_OP
+    ~allowed_roles:_R_VM_POWER_ADMIN
 	()
 
 let network_detach_for_vm = call
@@ -4836,7 +4880,7 @@ let network_detach_for_vm = call
 	]
 	~in_product_since:rel_tampa
 	~hide_from_docs:true
-	~allowed_roles:_R_POOL_OP
+    ~allowed_roles:_R_VM_POWER_ADMIN
 	()
 
 (** A virtual network *)
@@ -5356,6 +5400,15 @@ let vif_unplug_force = call
   ~allowed_roles:_R_VM_ADMIN
   ()
 
+let vif_move = call
+    ~name:"move"
+    ~in_product_since:rel_ely
+    ~doc:"Move the specified VIF to the specified network, even while the VM is running"
+    ~params:[Ref _vif, "self", "The VIF to move";
+             Ref _network, "network", "The network to move it to"]
+    ~allowed_roles:_R_VM_ADMIN
+    ()
+
 let vif_operations =
   Enum ("vif_operations", 
 	[ "attach", "Attempting to attach this VIF to a VM";
@@ -5481,7 +5534,7 @@ let vif =
       ~doccomments:[] 
       ~messages_default_allowed_roles:_R_VM_ADMIN
       ~doc_tags:[Networking]
-      ~messages:[vif_plug; vif_unplug; vif_unplug_force; vif_set_locking_mode;
+    ~messages:[vif_plug; vif_unplug; vif_unplug_force; vif_move; vif_set_locking_mode;
         vif_set_ipv4_allowed; vif_add_ipv4_allowed; vif_remove_ipv4_allowed; vif_set_ipv6_allowed; vif_add_ipv6_allowed; vif_remove_ipv6_allowed; 
 	vif_configure_ipv4; vif_configure_ipv6]
       ~contents:
@@ -5554,6 +5607,7 @@ let storage_operations =
 	  "vdi_resize", "Resizing a VDI"; 
 	  "vdi_clone", "Cloneing a VDI"; 
 	  "vdi_snapshot", "Snapshotting a VDI";
+          "vdi_mirror", "Mirroring a VDI";
 	  "pbd_create", "Creating a PBD for this SR";
 	  "pbd_destroy", "Destroying one of this SR's PBDs"; ])
 
@@ -5718,12 +5772,14 @@ let lvhd_enable_thin_provisioning = call
    ~in_product_since:rel_dundee
    ~allowed_roles:_R_POOL_ADMIN
    ~params:[
+      Ref _host, "host", "The LVHD Host to upgrade to being thin-provisioned.";
      Ref _sr, "SR", "The LVHD SR to upgrade to being thin-provisioned.";
      Int, "initial_allocation", "The initial amount of space to allocate to a newly-created VDI in bytes";
      Int, "allocation_quantum", "The amount of space to allocate to a VDI when it needs to be enlarged in bytes";
    ]
    ~doc:"Upgrades an LVHD SR to enable thin-provisioning. Future VDIs created in this SR will be thinly-provisioned, although existing VDIs will be left alone. Note that the SR must be attached to the SRmaster for upgrade to work."
-   ~forward_to:(Extension "LVHD.enable_thin_provisioning")
+    ~forward_to:(HostExtension "LVHD.enable_thin_provisioning")
+    ~result:(String, "Message from LVHD.enable_thin_provisioning extension")
    ()  
 
 let lvhd = 
@@ -5863,6 +5919,7 @@ let vdi_operations =
 	  "resize", "Resizing the VDI";
 	  "resize_online", "Resizing the VDI which may or may not be online";
 	  "snapshot", "Snapshotting the VDI";
+          "mirror", "Mirroring the VDI";
 	  "destroy", "Destroying the VDI";
 	  "forget", "Forget about the VDI";
 	  "update", "Refreshing the fields of the VDI";
@@ -6934,6 +6991,7 @@ let pool =
 			[ field ~in_oss_since:None ~in_product_since:rel_dundee ~qualifier:DynamicRO ~ty:(Map(String, String)) ~default_value:(Some (VMap [])) "guest_agent_config" "Pool-wide guest agent configuration information"
 			; field ~qualifier:DynamicRO ~in_product_since:rel_dundee ~default_value:(Some (VMap [])) ~ty:(Map(String, String)) "cpu_info" "Details about the physical CPUs on the pool"
 			; field ~qualifier:RW ~in_product_since:rel_dundee ~default_value:(Some (VBool false)) ~ty:Bool "policy_no_vendor_device" "The pool-wide policy for clients on whether to use the vendor device or not on newly created VMs. This field will also be consulted if the 'has_vendor_device' field is not specified in the VM.create call."
+       ; field ~qualifier:RW ~in_product_since:rel_ely ~default_value:(Some (VBool false)) ~ty:Bool "live_patching_disabled" "The pool-wide flag to show if the live patching feauture is disabled or not."
 			])
 		()
 
@@ -7279,6 +7337,7 @@ let vm =
 		vm_set_memory_static_min;
 		vm_set_memory_static_range;
 		vm_set_memory_limits;
+                vm_set_memory;
 		vm_set_memory_target_live;
 		vm_wait_memory_target_live;
 		vm_get_cooperative;
@@ -7402,7 +7461,10 @@ let vm =
      "let restrictions = Db_actions.DB_Action.Pool.get_restrictions ~__context ~self:pool in ";
      "let vendor_device_allowed = try List.assoc \"restrict_pci_device_for_auto_update\" restrictions = \"false\" with _ -> false in";
      "let policy_says_its_ok = not (Db_actions.DB_Action.Pool.get_policy_no_vendor_device ~__context ~self:pool) in";
-     "vendor_device_allowed && policy_says_its_ok) with e -> D.error \"Failure when defaulting has_vendor_device field: %s\" (Printexc.to_string e); Rpc.Bool false)"], VBool false))) ~ty:Bool "has_vendor_device" "When an HVM guest starts, this controls the presence of the emulated C000 PCI device which triggers Windows Update to fetch or update PV drivers.";
+             "vendor_device_allowed && policy_says_its_ok) with e -> D.error \"Failure when defaulting has_vendor_device field: %s\" (Printexc.to_string e); Rpc.Bool false)"], VBool false)))
+           ~ty:Bool "has_vendor_device" "When an HVM guest starts, this controls the presence of the emulated C000 PCI device which triggers Windows Update to fetch or update PV drivers.";
+         field ~qualifier:DynamicRO ~ty:Bool ~lifecycle:[Published, rel_ely, ""] ~default_value:(Some (VBool false))
+           "requires_reboot" "Indicates whether a VM requires a reboot in order to update its configuration, e.g. its memory allocation."
     ])
 	()
 
@@ -7421,19 +7483,49 @@ let vm_vcpu_metrics =
   ]
 
 let vm_metrics = 
-    create_obj ~in_db:true ~in_product_since:rel_rio ~in_oss_since:oss_since_303 ~internal_deprecated_since:None ~persist:PersistEverything ~gen_constructor_destructor:false ~name:_vm_metrics ~descr:"The metrics associated with a VM"
+  create_obj
+    ~in_db:true
+    ~in_product_since:rel_rio
+    ~in_oss_since:oss_since_303
+    ~internal_deprecated_since:None
+    ~persist:PersistEverything
+    ~gen_constructor_destructor:false
+    ~name:_vm_metrics
+    ~descr:"The metrics associated with a VM"
       ~gen_events:true
       ~doccomments:[]
       ~messages_default_allowed_roles:_R_VM_ADMIN
-      ~messages:[] ~contents:
-      [ uid _vm_metrics;
-	namespace ~name:"memory" ~contents:vm_memory_metrics ();
-	namespace ~name:"VCPUs" ~contents:vm_vcpu_metrics ();
-	field ~qualifier:DynamicRO ~ty:(Set (String)) "state" "The state of the guest, eg blocked, dying etc" ~persist:false;
-	field ~qualifier:DynamicRO ~ty:DateTime "start_time" "Time at which this VM was last booted";
-	field ~in_oss_since:None ~qualifier:DynamicRO ~ty:DateTime "install_time" "Time at which the VM was installed";
-	field ~qualifier:DynamicRO ~ty:DateTime "last_updated" "Time at which this information was last updated" ~persist:false;
-	field ~in_product_since:rel_orlando ~default_value:(Some (VMap [])) ~ty:(Map(String, String)) "other_config" "additional configuration" ~persist:false;
+    ~messages:[]
+    ~contents:
+      [ uid _vm_metrics
+      ; namespace ~name:"memory" ~contents:vm_memory_metrics ()
+      ; namespace ~name:"VCPUs" ~contents:vm_vcpu_metrics ()
+      ; field ~qualifier:DynamicRO ~ty:(Set (String))
+          "state" "The state of the guest, eg blocked, dying etc"
+          ~persist:false
+      ; field ~qualifier:DynamicRO ~ty:DateTime
+          "start_time" "Time at which this VM was last booted"
+      ; field ~in_oss_since:None ~qualifier:DynamicRO ~ty:DateTime
+          "install_time" "Time at which the VM was installed"
+      ; field ~qualifier:DynamicRO ~ty:DateTime
+          "last_updated" "Time at which this information was last updated"
+          ~persist:false
+      ; field ~in_product_since:rel_orlando ~default_value:(Some (VMap []))
+          ~ty:(Map(String, String))
+          "other_config" "additional configuration"
+          ~persist:false
+      ; field ~in_product_since:rel_ely ~default_value:(Some (VBool false))
+          ~ty:Bool ~qualifier:DynamicRO
+          "hvm" "hardware virtual machine"
+          ~persist:false
+      ; field ~in_product_since:rel_ely ~default_value:(Some (VBool false))
+          ~ty:Bool ~qualifier:DynamicRO
+          "nested_virt" "VM supports nested virtualisation"
+          ~persist:false
+      ; field ~in_product_since:rel_ely ~default_value:(Some (VBool false))
+          ~ty:Bool ~qualifier:DynamicRO
+          "nomigrate" "VM is immobile and can't migrate between hosts"
+          ~persist:false
       ]
 	()
 
