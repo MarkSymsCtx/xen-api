@@ -13,7 +13,7 @@
  *)
 (** Module that defines API functions for Host objects
  * @group XenAPI functions
- *)
+*)
 
 (** {2 (Fill in Title!)} *)
 
@@ -28,11 +28,11 @@ val local_assert_healthy : __context:'a -> unit
 val set_power_on_mode :
   __context:Context.t ->
   self:[ `host ] Ref.t -> power_on_mode: string -> power_on_config:(string * string) list -> unit
-  
+
 val bugreport_upload :
   __context:'a ->
   host:'b -> url:string -> options:(string * string) list -> unit
-  
+
 val signal_networking_change : __context:Context.t -> unit
 val signal_cdrom_event : __context:Context.t -> string -> unit
 val notify : __context:Context.t -> ty:string -> params:string -> unit
@@ -229,7 +229,7 @@ val set_localdb_key : __context:Context.t -> host:API.ref_host -> key:string -> 
 
 
 (** {2 Secrets} *)
-  
+
 val update_pool_secret :
   __context:'a -> host:'b -> pool_secret:string -> unit
 
@@ -244,13 +244,13 @@ val refresh_pack_info : __context:Context.t -> host:API.ref_host -> unit
 
 (** Called by post-floodgate slaves to update the database AND recompute the pool_sku on the master *)
 val set_license_params :
-	__context:Context.t ->
-	self:[ `host ] Ref.t -> value:(string * string) list -> unit
+  __context:Context.t ->
+  self:[ `host ] Ref.t -> value:(string * string) list -> unit
 
 val copy_license_to_db :
-	__context:Context.t ->
-	host:[ `host ] Ref.t ->
-	features:Features.feature list -> additional:(string * string) list -> unit
+  __context:Context.t ->
+  host:[ `host ] Ref.t ->
+  features:Features.feature list -> additional:(string * string) list -> unit
 
 val license_add : __context:Context.t -> host:API.ref_host -> contents:string -> unit
 
@@ -264,10 +264,10 @@ val license_remove : __context:Context.t -> host:API.ref_host -> unit
  *  connection details in host.license_server have been amended. *)
 val apply_edition : __context:Context.t -> host:API.ref_host -> edition:string -> force:bool -> unit
 val apply_edition_internal : __context:Context.t -> host:API.ref_host ->
-	edition:string -> additional:(string * string) list -> unit
+  edition:string -> additional:(string * string) list -> unit
 
 (** {2 CPU Feature Masking} *)
- 
+
 (** Control the local caching behaviour of the host *)
 val enable_local_storage_caching : __context:Context.t -> host:API.ref_host -> sr:API.ref_SR -> unit
 val disable_local_storage_caching : __context:Context.t -> host:API.ref_host -> unit
