@@ -223,7 +223,7 @@ class API(object):
         self.path = self.dispatcher.get_path({"uid": self.uid})
         base_path = os.path.dirname(self.path)
         if not os.path.exists(base_path): os.makedirs(base_path)
-        # Open file at pos 0, creating but not truncating the file(not possible otherwise):
+        # Open @ pos 0: Create, never truncate the file(not possible otherwise):
         fd = os.open(self.path, os.O_RDWR|os.O_CREAT)
         self.dest = os.fdopen(fd, "r+b")
 
